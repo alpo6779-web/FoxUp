@@ -1258,6 +1258,7 @@ def support_message_step2(message):
 
 
 # --- هندلرهای اصلی ---
+# --- هندلرهای اصلی ---
 @bot.message_handler(commands=['start'])
 def start_command(message):
     try:
@@ -1306,7 +1307,8 @@ def start_command(message):
 
                     sent_message = bot.send_message(chat_id, LANGUAGES[lang]['upload_link_single'].format(bot_username=bot.get_me().username, file_id=param, seconds=seconds_text), reply_markup=markup)
 
-                   if not is_admin(user_id) and settings['auto_delete_time'] > 0:
+                    # فقط برای کاربران عادی پیام رو پاک کن، نه برای ادمین
+                    if not is_admin(user_id) and settings['auto_delete_time'] > 0:
                         scheduler.add_job(
                             bot.delete_message,
                             'date',
@@ -1459,14 +1461,14 @@ def handle_file_upload(message):
         reply_markup=markup
     )
 
- # فقط برای کاربران عادی پیام رو پاک کن، نه برای ادمین
-        if not is_admin(user_id) and settings['auto_delete_time'] > 0:
-            scheduler.add_job(
-                bot.delete_message,
-                'date',
-                run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
-                args=[chat_id, sent_message.message_id]  # فقط پیام لینک رو پاک کن
-            )
+    # فقط برای کاربران عادی پیام رو پاک کن، نه برای ادمین
+    if not is_admin(user_id) and settings['auto_delete_time'] > 0:
+        scheduler.add_job(
+            bot.delete_message,
+            'date',
+            run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
+            args=[chat_id, sent_message.message_id]  # فقط پیام لینک رو پاک کن
+        )
         
 # --- Command Handlers for Menu Buttons ---
 @bot.message_handler(func=lambda message: True)
