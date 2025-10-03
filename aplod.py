@@ -531,6 +531,18 @@ def get_total_albums():
         cursor.execute('SELECT COUNT(*) FROM albums')
         return cursor.fetchone()[0]
 
+def calculate_ping():
+    """محاسبه پینگ ربات"""
+    try:
+        start_time = time.time()
+        bot.get_me()  # یک درخواست ساده به API
+        end_time = time.time()
+        ping_ms = round((end_time - start_time) * 1000, 2)
+        return ping_ms
+    except Exception as e:
+        logger.error(f"خطا در محاسبه پینگ: {e}")
+        return "N/A"
+
 def get_file_info(file_id):
     with get_db_connection() as conn:
         cursor = conn.cursor()
@@ -1294,14 +1306,14 @@ def start_command(message):
 
                     sent_message = bot.send_message(chat_id, LANGUAGES[lang]['upload_link_single'].format(bot_username=bot.get_me().username, file_id=param, seconds=seconds_text), reply_markup=markup)
 
-                    # فقط برای کاربران عادی پیام لینک رو پاک کن
-                    if not is_admin(user_id) and settings['auto_delete_time'] > 0:
-                        scheduler.add_job(
-                            bot.delete_message,
-                            'date',
-                            run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
-                            args=[chat_id, sent_message.message_id]  # فقط پیام لینک
-                        )
+                   # فقط برای کاربران عادی پیام فایل اصلی رو پاک کن
+if not is_admin(user_id) and settings['auto_delete_time'] > 0:
+    scheduler.add_job(
+        bot.delete_message,
+        'date',
+        run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
+        args=[chat_id, message.message_id + 1]  
+    )
                 except Exception as e:
                     logger.error(f"خطا در ارسال فایل: {e}")
                     bot.send_message(chat_id, LANGUAGES[lang]['file_not_found'])
@@ -1447,14 +1459,14 @@ def handle_file_upload(message):
         reply_markup=markup
     )
 
-    # حذف خودکار فقط برای کاربران عادی و فقط پیام لینک
-    if not is_admin(user_id) and settings['auto_delete_time'] > 0:
-        scheduler.add_job(
-            bot.delete_message,
-            'date',
-            run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
-            args=[chat_id, sent_message.message_id]  # فقط پیام لینک
-        )
+   # حذف خودکار فقط برای کاربران عادی و فقط پیام فایل اصلی
+if not is_admin(user_id) and settings['auto_delete_time'] > 0:
+    scheduler.add_job(
+        bot.delete_message,
+        'date',
+        run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
+        args=[chat_id, message.message_id]  # ✅ اینجا پیام فایل اصلی رو پاک می‌کنه
+    )
         
 # --- Command Handlers for Menu Buttons ---
 @bot.message_handler(func=lambda message: True)
