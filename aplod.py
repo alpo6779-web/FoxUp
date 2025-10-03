@@ -678,6 +678,7 @@ def show_admin_main_menu(chat_id, lang):
     markup.add(
         types.KeyboardButton(LANGUAGES[lang]['btn_upload_file']),
         types.KeyboardButton(LANGUAGES[lang]['btn_album_upload']),
+        types.KeyboardButton('📊 آمار ربات'),  # این خط رو اضافه کن
         types.KeyboardButton(LANGUAGES[lang]['btn_broadcast']),
         types.KeyboardButton(LANGUAGES[lang]['btn_bot_info']),
         types.KeyboardButton(LANGUAGES[lang]['btn_change_language']),
@@ -1081,6 +1082,69 @@ def broadcast_message_step2(message):
     bot.send_message(chat_id, LANGUAGES[lang]['broadcast_success'].format(count=sent_count))
     show_admin_main_menu(chat_id, lang)
 
+def generate_stats():
+    """ایجاد آمار کامل برای ادمین"""
+    try:
+        total_users = get_total_users()
+        active_users_today = get_active_users_today()
+        total_files = get_total_files()
+        total_albums = get_total_albums()
+        admin_count = get_admin_count()
+        
+        new_users_today = get_new_users_count(1)
+        new_users_week = get_new_users_count(7)
+        new_users_month = get_new_users_count(31)
+        
+        active_percent = round((active_users_today / total_users * 100), 2) if total_users > 0 else 0
+        
+        settings = get_settings(ADMIN_ID)
+        auto_delete_time = settings['auto_delete_time'] if settings else 30
+        forward_lock = "فعال ✅" if settings and settings['forward_lock'] else "غیرفعال ❌"
+        
+        view_reaction_status = "فعال ✅" if settings and settings['force_view_reaction_enabled'] else "غیرفعال ❌"
+        view_reaction_link = "تنظیم شده ✅" if settings and settings['view_reaction_link'] else "تنظیم نشده ❌"
+        
+        force_join_status = "فعال ✅" if settings and settings['force_join_enabled'] else "غیرفعال ❌"
+        force_join_link = "تنظیم شده ✅" if settings and settings['force_join_link'] else "تنظیم نشده ❌"
+        
+        ping_time = calculate_ping()
+        
+        stats_text = f"""
+📊 *آمار کلی ربات*
+
+👥 *کاربران:*
+• کل کاربران: `{total_users} نفر`
+• کاربران فعال (امروز): `{active_users_today} نفر` ({active_percent}%)
+• کاربران جدید امروز: `{new_users_today} نفر`
+• کاربران جدید ۷ روزه: `{new_users_week} نفر` 
+• کاربران جدید ۳۱ روزه: `{new_users_month} نفر`
+
+📁 *فایل‌ها:*
+• کل فایل‌ها: `{total_files} فایل`
+• کل آلبوم‌ها: `{total_albums} آلبوم`
+
+⚙️ *تنظیمات:*
+• تعداد ادمین‌ها: `{admin_count} نفر`
+• زمان حذف خودکار: `{auto_delete_time} ثانیه`
+• قفل فوروارد: {forward_lock}
+• قفل مشاهده/واکنش: {view_reaction_status}
+• لینک قفل مشاهده: {view_reaction_link}
+• جوین اجباری: {force_join_status}
+• لینک جوین اجباری: {force_join_link}
+
+🛠️ *سیستم:*
+• پینگ ربات: `{ping_time}ms`
+• آخرین به‌روزرسانی: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`
+• وضعیت: `آنلاین ✅`
+        """
+        
+        return stats_text
+        
+    except Exception as e:
+        logger.error(f"خطا در تولید آمار: {e}")
+        return "❌ خطا در دریافت آمار"
+        
+
 def ban_user_step1(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
@@ -1456,6 +1520,11 @@ def handle_menu_buttons(message):
     elif is_admin(user_id):
         if message.text == LANGUAGES[lang]['settings_menu']:
             show_settings_menu(chat_id, lang)
+
+         elif message.text == '📊 آمار ربات':
+        stats = generate_stats()
+        bot.send_message(chat_id, stats, parse_mode='Markdown')
+        
         elif message.text == LANGUAGES[lang]['btn_upload_file']:
             bot.send_message(chat_id, "لطفاً فایل خود (عکس، ویدئو، سند یا صدا) را ارسال کنید.")
             user_states[chat_id] = 'awaiting_file_upload' # Set state for file handling
