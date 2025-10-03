@@ -9,8 +9,6 @@ from datetime import datetime, timedelta
 import random
 import string
 from flask import Flask, request
-
-# --- ایجاد برنامه Flask ---
 app = Flask(__name__)
 
 # --- تنظیمات اولیه ---
