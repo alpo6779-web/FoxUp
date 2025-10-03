@@ -52,10 +52,13 @@ class AutoPinger:
     
     def _ping_loop(self):
         """حلقه پینگ دوره‌ای"""
+        # اول 30 ثانیه صبر کن تا سرور کامل راه‌اندازی بشه
+        time.sleep(30)
+        
         while self.is_running:
             try:
-                # پینگ به آدرس local (همان سرور خودش)
-                health_url = "http://localhost:5000/health"
+                # پینگ به localhost اما روی پورت 10000
+                health_url = "http://localhost:10000/health"
                 response = requests.get(health_url, timeout=10)
                 
                 if response.status_code == 200:
@@ -1841,6 +1844,7 @@ def initialize_bot():
 # --- اجرای برنامه ---
 if __name__ == '__main__':
     if initialize_bot():
-        # روی Render از port محیطی استفاده می‌کنیم
-        port = int(os.environ.get('PORT', 5000))
+        # روی Render از port 10000 استفاده می‌کنیم
+        port = int(os.environ.get('PORT', 10000))
+        logger.info(f"🌐 سرور در حال اجرا روی پورت {port}")
         app.run(host='0.0.0.0', port=port)
