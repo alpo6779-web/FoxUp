@@ -1,4 +1,5 @@
 import os
+import requests
 import telebot
 from telebot import types
 import sqlite3
@@ -32,6 +33,48 @@ scheduler = BackgroundScheduler()
 scheduler.start()
 user_states = {}
 album_upload_data = {}
+
+# --- سیستم پینگ دوره‌ای برای فعال نگه داشتن ربات ---
+class AutoPinger:
+    def __init__(self):
+        self.is_running = False
+        
+    def start_pinging(self):
+        """شروع پینگ دوره‌ای برای فعال نگه داشتن ربات"""
+        if self.is_running:
+            return
+            
+        self.is_running = True
+        ping_thread = threading.Thread(target=self._ping_loop, daemon=True)
+        ping_thread.start()
+        logger.info("🚀 سیستم پینگ دوره‌ای فعال شد")
+    
+    def _ping_loop(self):
+        """حلقه پینگ دوره‌ای"""
+        while self.is_running:
+            try:
+                # آدرس برنامه روی Render
+                app_url = f"https://{os.environ.get('RENDER_SERVICE_NAME', 'your-bot-name')}.onrender.com"
+                health_url = f"{app_url}/health"
+                
+                # ارسال درخواست به سلامت‌سنجی
+                response = requests.get(health_url, timeout=10)
+                
+                if response.status_code == 200:
+                    logger.info(f"✅ پینگ موفق - ربات فعال (کد: {response.status_code})")
+                else:
+                    logger.warning(f"⚠️ پینگ با کد غیرعادی: {response.status_code}")
+                    
+            except requests.exceptions.RequestException as e:
+                logger.error(f"❌ خطا در پینگ: {e}")
+            except Exception as e:
+                logger.error(f"❌ خطای غیرمنتظره در پینگ: {e}")
+            
+            # منتظر 8 دقیقه بمان (کمتر از 15 دقیقه Render)
+            time.sleep(480)  # 8 دقیقه = 480 ثانیه
+
+# ایجاد نمونه پینگر
+auto_pinger = AutoPinger()
 
 # --- پشتیبانی از زبان‌ها ---
 LANGUAGES = {
@@ -1519,7 +1562,15 @@ def reload_command(message):
     lang = get_user_language(user_id)
     bot.send_message(chat_id, "🔄 در حال بارگذاری مجدد منو...")
     show_admin_main_menu(chat_id, lang)
-        
+
+
+@app.route('/ping')
+def manual_ping():
+    """اندپوینت برای پینگ دستی"""
+    logger.info("🔔 پینگ دستی دریافت شد")
+    return '🏓 پونگ! ربات فعال است', 200
+
+
 # --- Command Handlers for Menu Buttons ---
 @bot.message_handler(func=lambda message: True)
 def handle_menu_buttons(message):
@@ -1767,7 +1818,7 @@ def initialize_bot():
         if setup_log_channel():
             logger.info("✅ کانال لاگ فعال است - فایل‌ها در کانال ذخیره می‌شوند")
         else:
-            logger.warning("⚠️ کانال لاغ غیرفعال است - فایل‌ها در پیوی ادمین ذخیره می‌شوند")
+            logger.warning("⚠️ کانال لاگ غیرفعال است - فایل‌ها در پیوی ادمین ذخیره می‌شوند")
     else:
         logger.info("ℹ️ کانال لاگ تنظیم نشده - فایل‌ها در پیوی ادمین ذخیره می‌شوند")
     
@@ -1782,6 +1833,9 @@ def initialize_bot():
     
     # شروع پشتیبان‌گیری خودکار
     auto_backup.start_auto_backup()
+    
+    # 🔥 شروع پینگ دوره‌ای
+    auto_pinger.start_pinging()
     
     logger.info("✅ ربات با موفقیت راه‌اندازی شد")
     return True
