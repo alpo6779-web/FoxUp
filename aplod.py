@@ -8,9 +8,12 @@ from datetime import datetime, timedelta
 import random
 import string
 
+# ایمپورت سیستم پشتیبان‌گیری خودکار
+from auto_backup import auto_backup
+
 # --- تنظیمات اولیه ---
-TOKEN = 'enter your bot token'  # توکن ربات
-ADMIN_ID = 123456789  # آیدی عددی ادمین اصلی 
+TOKEN = 'enter your bot token'
+ADMIN_ID = 123456789
 DB_FILE = 'bot_data.db'
 MAX_MESSAGE_LENGTH = 4096
 
@@ -18,7 +21,7 @@ MAX_MESSAGE_LENGTH = 4096
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[logging.FileHandler('bot.log', encoding='utf-8'), logging.StreamHandler()]
+    handlers=[logging.StreamHandler()]  # فقط کنسول
 )
 logger = logging.getLogger(__name__)
 
@@ -26,8 +29,8 @@ logger = logging.getLogger(__name__)
 bot = telebot.TeleBot(TOKEN, parse_mode='Markdown')
 scheduler = BackgroundScheduler()
 scheduler.start()
-user_states = {}  # مدیریت وضعیت‌های کاربران
-album_upload_data = {}  # ذخیره فایل‌های آلبوم
+user_states = {}
+album_upload_data = {}
 
 # --- پشتیبانی از زبان‌ها ---
 LANGUAGES = {
@@ -171,11 +174,19 @@ LANGUAGES = {
     }
 }
 
-# --- توابع دیتابیس (بدون تغییر) ---
+# --- توابع دیتابیس (با قابلیت بازیابی خودکار) ---
 def get_db_connection():
-    return sqlite3.connect(DB_FILE, check_same_thread=False, isolation_level=None)
+    """اتصال به دیتابیس با بازیابی خودکار در صورت خطا"""
+    try:
+        return sqlite3.connect(DB_FILE, check_same_thread=False, isolation_level=None)
+    except Exception as e:
+        logger.error(f"❌ خطا در اتصال به دیتابیس: {e}")
+        # تلاش برای بازیابی
+        auto_backup.restore_backup()
+        return sqlite3.connect(DB_FILE, check_same_thread=False, isolation_level=None)
 
 def create_tables():
+    """ایجاد جداول با قابلیت بازیابی خودکار"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
@@ -240,9 +251,11 @@ def create_tables():
             ''')
             cursor.execute('INSERT OR IGNORE INTO bot_admins (user_id) VALUES (?)', (ADMIN_ID,))
             conn.commit()
-        logger.info("دیتابیس و جداول با موفقیت ایجاد شد.")
+        logger.info("✅ دیتابیس و جداول با موفقیت ایجاد شد.")
+        return True
     except sqlite3.Error as e:
-        logger.error(f"خطا در دیتابیس: {e}")
+        logger.error(f"❌ خطا در دیتابیس: {e}")
+        return False
 
 def get_user_language(user_id):
     with get_db_connection() as conn:
