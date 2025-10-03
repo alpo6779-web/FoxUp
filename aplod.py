@@ -1498,7 +1498,6 @@ def set_language(call):
 
 # --- راه‌اندازی اصلی ---
 def initialize_bot():
-    """راه‌اندازی اولیه ربات"""
     logger.info("🚀 در حال راه‌اندازی ربات...")
     
     # اول بررسی کن دیتابیس سالم باشد
@@ -1516,11 +1515,9 @@ def initialize_bot():
     logger.info("✅ ربات با موفقیت راه‌اندازی شد")
     return True
 
+# --- اجرای برنامه ---
 if __name__ == '__main__':
     if initialize_bot():
-        try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            logger.error(f"❌ خطا در polling: {e}")
-            time.sleep(5)
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        # روی Render از port محیطی استفاده می‌کنیم
+        port = int(os.environ.get('PORT', 5000))
+        app.run(host='0.0.0.0', port=port)
