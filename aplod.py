@@ -1496,6 +1496,25 @@ def set_language(call):
     else:
         show_user_main_menu(chat_id, lang_code)
 
+# --- Endpoint برای Render ---
+@app.route('/')
+def home():
+    return '🤖 ربات تلگرام در حال اجراست!', 200
+
+@app.route('/health')
+def health_check():
+    return '✅ ربات سالم است', 200
+
+# Webhook endpoint (اگر نیاز داری)
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return 'OK', 200
+    return 'Error', 403
+
 # --- راه‌اندازی اصلی ---
 def initialize_bot():
     logger.info("🚀 در حال راه‌اندازی ربات...")
