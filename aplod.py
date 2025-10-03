@@ -16,6 +16,7 @@ TOKEN = os.environ.get('BOT_TOKEN', 'enter your bot token')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', '123456789'))
 DB_FILE = 'bot_data.db'
 MAX_MESSAGE_LENGTH = 4096
+BOT_STORAGE_CHAT_ID = 8342748520  # این رو اضافه کن - ابتدا None میذاریم
 
 # --- تنظیمات لاگ ---
 logging.basicConfig(
@@ -460,6 +461,25 @@ def remove_admin(user_id):
         cursor = conn.cursor()
         cursor.execute('DELETE FROM bot_admins WHERE user_id=?', (user_id,))
         conn.commit()
+
+def setup_bot_storage():
+    """ایجاد یا پیدا کردن چت ذخیره‌سازی برای فایل‌ها"""
+    global BOT_STORAGE_CHAT_ID
+    
+    try:
+        # ایجاد یک چت خصوصی با خود بات
+        bot.send_message(ADMIN_ID, "🔧 در حال راه‌اندازی سیستم ذخیره‌سازی فایل‌ها...")
+        
+        # ایجاد چت با بات
+        chat = bot.get_chat(ADMIN_ID)
+        BOT_STORAGE_CHAT_ID = ADMIN_ID  # از پیوی ادمین استفاده می‌کنیم
+        
+        logger.info(f"✅ چت ذخیره‌سازی تنظیم شد: {BOT_STORAGE_CHAT_ID}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ خطا در تنظیم چت ذخیره‌سازی: {e}")
+        return False
 
 def get_all_users():
     with get_db_connection() as conn:
@@ -1134,7 +1154,6 @@ def support_message_step2(message):
 @bot.message_handler(commands=['start'])
 def start_command(message):
     try:
-        create_tables()
         chat_id = message.chat.id
         user_id = message.from_user.id
         add_user(user_id)
@@ -1144,15 +1163,15 @@ def start_command(message):
             return
 
         lang = get_user_language(user_id)
-        settings = create_or_get_settings(ADMIN_ID) # Use ADMIN_ID for settings as they are bot-wide
+        settings = create_or_get_settings(ADMIN_ID)
 
-        # Force Join Check - Placed here to restrict any bot usage if not a member
+        # Force Join Check
         if settings['force_join_enabled'] and settings['force_join_link'] and settings['force_join_channel_id']:
             if not is_user_member(user_id, settings['force_join_channel_id']):
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton(text="عضویت در کانال/گروه", url=settings['force_join_link']))
                 bot.send_message(chat_id, LANGUAGES[lang]['not_a_member'].format(link=settings['force_join_link']), reply_markup=markup)
-                return # Stop execution if user is not a member
+                return
 
         if message.text.startswith('/start '):
             param = message.text.split(' ')[1]
@@ -1169,49 +1188,46 @@ def start_command(message):
             file_info = get_file_info(param)
             if file_info:
                 try:
-                    bot.copy_message(chat_id, file_info['chat_id'], file_info['message_id'], disable_notification=True)
+                    # ارسال فایل از چت ذخیره‌سازی
+                    bot.copy_message(
+                        chat_id, 
+                        file_info['chat_id'],     # چت ذخیره‌سازی (ADMIN_ID)
+                        file_info['message_id'],  # پیام در چت ذخیره‌سازی
+                        disable_notification=True
+                    )
                     update_file_download_count(param)
+                    
                     seconds_text = str(settings['auto_delete_time']) if settings['auto_delete_time'] > 0 else "نامشخص"
 
                     markup = types.InlineKeyboardMarkup()
                     markup.add(types.InlineKeyboardButton(text=LANGUAGES[lang]['btn_redownload_file'], url=f"https://t.me/{bot.get_me().username}?start={param}"))
 
-                    bot.send_message(chat_id, LANGUAGES[lang]['upload_link_single'].format(bot_username=bot.get_me().username, file_id=param, seconds=seconds_text), reply_markup=markup)
+                    sent_message = bot.send_message(
+                        chat_id, 
+                        LANGUAGES[lang]['upload_link_single'].format(
+                            bot_username=bot.get_me().username, 
+                            file_id=param, 
+                            seconds=seconds_text
+                        ), 
+                        reply_markup=markup
+                    )
 
-                    if settings['auto_delete_time'] > 0:
+                    # فقط برای کاربران عادی پیام لینک رو پاک کن
+                    if not is_admin(user_id) and settings['auto_delete_time'] > 0:
                         scheduler.add_job(
                             bot.delete_message,
                             'date',
                             run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
-                            args=[chat_id, message.message_id + 1]
+                            args=[chat_id, sent_message.message_id]  # فقط پیام لینک
                         )
+                        
                 except Exception as e:
                     logger.error(f"خطا در ارسال فایل: {e}")
                     bot.send_message(chat_id, LANGUAGES[lang]['file_not_found'])
                 return
 
-            album_info = get_album_info(param)
-            if album_info:
-                try:
-                    message_ids = [int(mid) for mid in album_info['message_ids'].split(',')]
-                    for msg_id in message_ids:
-                        bot.copy_message(chat_id, album_info['chat_id'], msg_id, disable_notification=True)
-                        time.sleep(0.1)
-                    update_album_download_count(param)
-                    seconds_text = str(settings['auto_delete_time']) if settings['auto_delete_time'] > 0 else "نامشخص"
-
-                    markup = types.InlineKeyboardMarkup()
-                    markup.add(types.InlineKeyboardButton(text=LANGUAGES[lang]['btn_redownload_file'], url=f"https://t.me/{bot.get_me().username}?start={param}"))
-
-                    bot.send_message(chat_id, LANGUAGES[lang]['upload_album_link'].format(bot_username=bot.get_me().username, album_id=param, seconds=seconds_text), reply_markup=markup)
-
-                    if settings['auto_delete_time'] > 0:
-                        pass # Placeholder. Proper album message deletion requires tracking sent message IDs.
-                except Exception as e:
-                    logger.error(f"خطا در ارسال آلبوم: {e}")
-                    bot.send_message(chat_id, LANGUAGES[lang]['file_not_found'])
-                return
-
+            # کد آلبوم...
+            
         if is_admin(user_id):
             bot.send_message(chat_id, LANGUAGES[lang]['welcome_admin'])
             show_admin_main_menu(chat_id, lang)
@@ -1220,8 +1236,6 @@ def start_command(message):
             show_user_main_menu(chat_id, lang)
     except Exception as e:
         logger.error(f"خطا در دستور استارت: {e}")
-        bot.send_message(message.chat.id, "❌ خطایی رخ داد!")
-
 @bot.message_handler(content_types=['new_chat_members'])
 def welcome_new_member(message):
     chat_id = message.chat.id
@@ -1239,14 +1253,14 @@ def welcome_new_member(message):
 def handle_file_upload(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
-    settings = create_or_get_settings(ADMIN_ID) # Settings are global for the bot, use ADMIN_ID for retrieving them
+    settings = create_or_get_settings(ADMIN_ID)
     lang = get_user_language(user_id)
 
     if is_user_banned(user_id):
         bot.send_message(chat_id, LANGUAGES[lang]['banned'])
         return
 
-    # Check Force Join for all messages including file uploads
+    # Check Force Join
     if settings['force_join_enabled'] and settings['force_join_link'] and settings['force_join_channel_id']:
         if not is_user_member(user_id, settings['force_join_channel_id']):
             markup = types.InlineKeyboardMarkup()
@@ -1258,60 +1272,80 @@ def handle_file_upload(message):
         bot.send_message(chat_id, "❌ شما اجازه آپلود فایل ندارید!")
         return
 
-    # Handle album files if in album upload state
-    if user_states.get(chat_id) == 'awaiting_album_files':
-        if len(album_upload_data.get(chat_id, [])) >= 10:
-            bot.send_message(chat_id, LANGUAGES[lang]['album_upload_limit_reached'])
-            return
-        album_upload_data.setdefault(chat_id, []).append(str(message.message_id))
-        bot.send_message(chat_id, LANGUAGES[lang]['album_upload_add'].format(current=len(album_upload_data[chat_id]), total=10))
-        return
-
-    # Handle single file uploads
+    # --- قسمت جدید: ذخیره فایل در چت بات ---
     file_id = generate_unique_id()
     file_type = message.content_type
     original_filename = None
     caption = message.caption
 
+    # تشخیص نوع فایل و file_id
     if file_type == 'photo':
         file_info = message.photo[-1]
         original_filename = f"photo_{file_info.file_id}.jpg"
+        file_unique_id = file_info.file_id
     elif file_type == 'video':
         file_info = message.video
         original_filename = getattr(message.video, 'file_name', f"video_{file_info.file_id}.mp4")
+        file_unique_id = file_info.file_id
     elif file_type == 'document':
         file_info = message.document
         original_filename = message.document.file_name
+        file_unique_id = file_info.file_id
     elif file_type == 'audio':
         file_info = message.audio
         original_filename = getattr(message.audio, 'file_name', f"audio_{file_info.file_id}.mp3")
+        file_unique_id = file_info.file_id
     else:
-        # If it's not a supported file type, just ignore or send a message
-        bot.send_message(chat_id, "فایل ارسالی پشتیبانی نمی‌شود. لطفا عکس، ویدئو، سند یا صدا ارسال کنید.")
+        bot.send_message(chat_id, "فایل ارسالی پشتیبانی نمی‌شود.")
         return
 
-    save_file_info(file_id, user_id, file_type, message.message_id, chat_id, caption, original_filename)
+    try:
+        # فوروارد فایل به چت ذخیره‌سازی (پیوی ادمین)
+        forwarded_msg = bot.forward_message(
+            ADMIN_ID,  # ذخیره در پیوی ادمین
+            chat_id, 
+            message.message_id
+        )
+        
+        # ذخیره اطلاعات با آیدی چت ذخیره‌سازی
+        save_file_info(
+            file_id, 
+            user_id, 
+            file_type, 
+            forwarded_msg.message_id,  # آیدی پیام در چت ذخیره‌سازی
+            ADMIN_ID,                  # چت ذخیره‌سازی (پیوی ادمین)
+            caption, 
+            original_filename
+        )
+        
+        logger.info(f"✅ فایل در چت ذخیره‌سازی ذخیره شد: {file_id}")
 
+    except Exception as e:
+        logger.error(f"❌ خطا در ذخیره‌سازی فایل: {e}")
+        bot.send_message(chat_id, "❌ خطا در ذخیره‌سازی فایل")
+        return
+
+    # ارسال لینک به کاربر
     bot_username = bot.get_me().username
     seconds_text = str(settings['auto_delete_time']) if settings['auto_delete_time'] > 0 else "نامشخص"
 
     markup = types.InlineKeyboardMarkup()
     markup.add(types.InlineKeyboardButton(text=LANGUAGES[lang]['btn_redownload_file'], url=f"https://t.me/{bot_username}?start={file_id}"))
 
-    bot.send_message(
+    sent_message = bot.send_message(
         chat_id,
         LANGUAGES[lang]['upload_link_single'].format(bot_username=bot_username, file_id=file_id, seconds=seconds_text),
         reply_markup=markup
     )
 
-    if settings['auto_delete_time'] > 0:
+    # حذف خودکار فقط برای کاربران عادی و فقط پیام لینک
+    if not is_admin(user_id) and settings['auto_delete_time'] > 0:
         scheduler.add_job(
             bot.delete_message,
             'date',
             run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
-            args=[chat_id, message.message_id]
+            args=[chat_id, sent_message.message_id]  # فقط پیام لینک
         )
-
 # --- Command Handlers for Menu Buttons ---
 @bot.message_handler(func=lambda message: True)
 def handle_menu_buttons(message):
@@ -1545,9 +1579,12 @@ def webhook():
         return 'OK', 200
     return 'Error', 403
 
-# --- راه‌اندازی اصلی ---
 def initialize_bot():
     logger.info("🚀 در حال راه‌اندازی ربات...")
+    
+    # راه‌اندازی چت ذخیره‌سازی
+    if not setup_bot_storage():
+        logger.warning("⚠️ خطا در راه‌اندازی چت ذخیره‌سازی")
     
     # اول بررسی کن دیتابیس سالم باشد
     if not auto_backup.check_and_restore():
@@ -1563,7 +1600,6 @@ def initialize_bot():
     
     logger.info("✅ ربات با موفقیت راه‌اندازی شد")
     return True
-
 # --- اجرای برنامه ---
 if __name__ == '__main__':
     if initialize_bot():
