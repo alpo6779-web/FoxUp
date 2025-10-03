@@ -439,6 +439,10 @@ def add_user(user_id):
         conn.commit()
 
 def is_admin(user_id):
+    # ادمین اصلی همیشه ادمین باشد
+    if user_id == ADMIN_ID:
+        return True
+        
     with get_db_connection() as conn:
         cursor = conn.cursor()
         cursor.execute('SELECT user_id FROM bot_admins WHERE user_id=?', (user_id,))
@@ -890,13 +894,16 @@ def add_admin_step2(message):
         target_id = int(message.text)
         if not is_admin(target_id):
             add_admin(target_id)
+            
+            # اطلاع به ادمین جدید
+            notify_new_admin(target_id, user_id)
+            
             bot.send_message(chat_id, LANGUAGES[lang]['add_admin_success'].format(user_id=target_id))
         else:
             bot.send_message(chat_id, "❌ این کاربر قبلاً ادمین بوده است.")
     except ValueError:
         bot.send_message(chat_id, LANGUAGES[lang]['no_valid_id'])
     show_admin_management_menu(chat_id, lang)
-
 def remove_admin_step1(message):
     chat_id = message.chat.id
     user_id = message.from_user.id
@@ -1071,6 +1078,25 @@ def set_view_reaction_link_step2(message):
         bot.send_message(chat_id, "❌ خطایی رخ داد. لطفاً دوباره تلاش کنید.")
 
     show_view_reaction_menu(chat_id, lang)
+
+def notify_new_admin(admin_id, added_by_id):
+    """اعلام به کاربر جدید که ادمین شده است"""
+    try:
+        lang = get_user_language(admin_id)
+        added_by_name = bot.get_chat(added_by_id).first_name
+        
+        welcome_msg = (
+            f"🎉 تبریک! شما توسط {added_by_name} به عنوان ادمین ربات منصوب شدید.\n\n"
+            f"برای دسترسی به پنل مدیریت، لطفاً ربات را مجدداً استارت کنید:\n"
+            f"`/start`"
+        )
+        
+        bot.send_message(admin_id, welcome_msg)
+        logger.info(f"✅ کاربر {admin_id} از انتصابش به ادمین مطلع شد")
+        return True
+    except Exception as e:
+        logger.error(f"❌ خطا در اعلام به ادمین جدید: {e}")
+        return False
 
 def broadcast_message_step1(message):
     chat_id = message.chat.id
@@ -1281,6 +1307,7 @@ def start_command(message):
                 bot.send_message(chat_id, LANGUAGES[lang]['not_a_member'].format(link=settings['force_join_link']), reply_markup=markup)
                 return
 
+        # بررسی پارامتر start برای فایل‌ها و آلبوم‌ها
         if message.text.startswith('/start '):
             param = message.text.split(' ')[1]
 
@@ -1312,7 +1339,7 @@ def start_command(message):
                             bot.delete_message,
                             'date',
                             run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
-                            args=[chat_id, sent_file_message.message_id]  # فایل اصلی رو پاک کن
+                            args=[chat_id, sent_file_message.message_id]
                         )
                        
                 except Exception as e:
@@ -1346,19 +1373,24 @@ def start_command(message):
                                 bot.delete_message,
                                 'date',
                                 run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
-                                args=[chat_id, msg_id]  # هر فایل آلبوم رو پاک کن
+                                args=[chat_id, msg_id]
                             )
                 except Exception as e:
                     logger.error(f"خطا در ارسال آلبوم: {e}")
                     bot.send_message(chat_id, LANGUAGES[lang]['file_not_found'])
                 return
 
-        if is_admin(user_id):
+        # 🔥 **اصلاح مهم: بررسی وضعیت ادمین بعد از start**
+        # اگر کاربر ادمین است اما قبلاً منو نمایش داده نشده، منو رو نشون بده
+        user_is_admin = is_admin(user_id)
+        
+        if user_is_admin:
             bot.send_message(chat_id, LANGUAGES[lang]['welcome_admin'])
             show_admin_main_menu(chat_id, lang)
         else:
             bot.send_message(chat_id, LANGUAGES[lang]['welcome_user'])
             show_user_main_menu(chat_id, lang)
+            
     except Exception as e:
         logger.error(f"خطا در دستور استارت: {e}")
         bot.send_message(message.chat.id, "❌ خطایی رخ داد!")
@@ -1473,6 +1505,20 @@ def handle_file_upload(message):
             run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
             args=[chat_id, sent_message.message_id]  # فقط پیام لینک رو پاک کن
         )
+
+@bot.message_handler(commands=['reload'])
+def reload_command(message):
+    """بارگذاری مجدد منو برای ادمین‌ها"""
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    if not is_admin(user_id):
+        bot.send_message(chat_id, "❌ شما دسترسی به این دستور را ندارید.")
+        return
+        
+    lang = get_user_language(user_id)
+    bot.send_message(chat_id, "🔄 در حال بارگذاری مجدد منو...")
+    show_admin_main_menu(chat_id, lang)
         
 # --- Command Handlers for Menu Buttons ---
 @bot.message_handler(func=lambda message: True)
