@@ -1258,7 +1258,6 @@ def support_message_step2(message):
 
 
 # --- هندلرهای اصلی ---
-# --- هندلرهای اصلی ---
 @bot.message_handler(commands=['start'])
 def start_command(message):
     try:
@@ -1272,15 +1271,15 @@ def start_command(message):
             return
 
         lang = get_user_language(user_id)
-        settings = create_or_get_settings(ADMIN_ID) # Use ADMIN_ID for settings as they are bot-wide
+        settings = create_or_get_settings(ADMIN_ID)
 
-        # Force Join Check - Placed here to restrict any bot usage if not a member
+        # Force Join Check
         if settings['force_join_enabled'] and settings['force_join_link'] and settings['force_join_channel_id']:
             if not is_user_member(user_id, settings['force_join_channel_id']):
                 markup = types.InlineKeyboardMarkup()
                 markup.add(types.InlineKeyboardButton(text="عضویت در کانال/گروه", url=settings['force_join_link']))
                 bot.send_message(chat_id, LANGUAGES[lang]['not_a_member'].format(link=settings['force_join_link']), reply_markup=markup)
-                return # Stop execution if user is not a member
+                return
 
         if message.text.startswith('/start '):
             param = message.text.split(' ')[1]
@@ -1298,22 +1297,22 @@ def start_command(message):
             if file_info:
                 try:
                     # ارسال فایل از کانال لاگ یا پیوی ادمین
-                    bot.copy_message(chat_id, file_info['chat_id'], file_info['message_id'], disable_notification=True)
+                    sent_file_message = bot.copy_message(chat_id, file_info['chat_id'], file_info['message_id'], disable_notification=True)
                     update_file_download_count(param)
                     seconds_text = str(settings['auto_delete_time']) if settings['auto_delete_time'] > 0 else "نامشخص"
 
                     markup = types.InlineKeyboardMarkup()
                     markup.add(types.InlineKeyboardButton(text=LANGUAGES[lang]['btn_redownload_file'], url=f"https://t.me/{bot.get_me().username}?start={param}"))
 
-                    sent_message = bot.send_message(chat_id, LANGUAGES[lang]['upload_link_single'].format(bot_username=bot.get_me().username, file_id=param, seconds=seconds_text), reply_markup=markup)
+                    bot.send_message(chat_id, LANGUAGES[lang]['upload_link_single'].format(bot_username=bot.get_me().username, file_id=param, seconds=seconds_text), reply_markup=markup)
 
-                    # فقط برای کاربران عادی پیام رو پاک کن، نه برای ادمین
+                    # فقط برای کاربران عادی فایل اصلی رو بعد از زمان مشخص پاک کن
                     if not is_admin(user_id) and settings['auto_delete_time'] > 0:
                         scheduler.add_job(
                             bot.delete_message,
                             'date',
                             run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
-                            args=[chat_id, sent_message.message_id]  # فقط پیام لینک رو پاک کن
+                            args=[chat_id, sent_file_message.message_id]  # فایل اصلی رو پاک کن
                         )
                        
                 except Exception as e:
@@ -1325,25 +1324,30 @@ def start_command(message):
             if album_info:
                 try:
                     message_ids = [int(mid) for mid in album_info['message_ids'].split(',')]
+                    sent_album_messages = []
+                    
                     for msg_id in message_ids:
-                        bot.copy_message(chat_id, album_info['chat_id'], msg_id, disable_notification=True)
+                        sent_msg = bot.copy_message(chat_id, album_info['chat_id'], msg_id, disable_notification=True)
+                        sent_album_messages.append(sent_msg.message_id)
                         time.sleep(0.1)
+                    
                     update_album_download_count(param)
                     seconds_text = str(settings['auto_delete_time']) if settings['auto_delete_time'] > 0 else "نامشخص"
 
                     markup = types.InlineKeyboardMarkup()
                     markup.add(types.InlineKeyboardButton(text=LANGUAGES[lang]['btn_redownload_file'], url=f"https://t.me/{bot.get_me().username}?start={param}"))
 
-                    sent_message = bot.send_message(chat_id, LANGUAGES[lang]['upload_album_link'].format(bot_username=bot.get_me().username, album_id=param, seconds=seconds_text), reply_markup=markup)
+                    bot.send_message(chat_id, LANGUAGES[lang]['upload_album_link'].format(bot_username=bot.get_me().username, album_id=param, seconds=seconds_text), reply_markup=markup)
 
-                    # فقط برای کاربران عادی پیام لینک رو پاک کن
+                    # فقط برای کاربران عادی فایل‌های آلبوم رو بعد از زمان مشخص پاک کن
                     if not is_admin(user_id) and settings['auto_delete_time'] > 0:
-                        scheduler.add_job(
-                            bot.delete_message,
-                            'date',
-                            run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
-                            args=[chat_id, sent_message.message_id]  # فقط پیام لینک
-                        )
+                        for msg_id in sent_album_messages:
+                            scheduler.add_job(
+                                bot.delete_message,
+                                'date',
+                                run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
+                                args=[chat_id, msg_id]  # هر فایل آلبوم رو پاک کن
+                            )
                 except Exception as e:
                     logger.error(f"خطا در ارسال آلبوم: {e}")
                     bot.send_message(chat_id, LANGUAGES[lang]['file_not_found'])
