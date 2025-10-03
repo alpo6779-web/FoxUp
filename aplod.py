@@ -5,6 +5,7 @@ from telebot import types
 import sqlite3
 import logging
 import time
+import threading  
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timedelta
 import random
@@ -53,15 +54,12 @@ class AutoPinger:
         """حلقه پینگ دوره‌ای"""
         while self.is_running:
             try:
-                # آدرس برنامه روی Render
-                app_url = f"https://{os.environ.get('RENDER_SERVICE_NAME', 'your-bot-name')}.onrender.com"
-                health_url = f"{app_url}/health"
-                
-                # ارسال درخواست به سلامت‌سنجی
+                # پینگ به آدرس local (همان سرور خودش)
+                health_url = "http://localhost:5000/health"
                 response = requests.get(health_url, timeout=10)
                 
                 if response.status_code == 200:
-                    logger.info(f"✅ پینگ موفق - ربات فعال (کد: {response.status_code})")
+                    logger.info(f"✅ پینگ موفق - ربات فعال")
                 else:
                     logger.warning(f"⚠️ پینگ با کد غیرعادی: {response.status_code}")
                     
