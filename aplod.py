@@ -1368,7 +1368,7 @@ def handle_file_upload(message):
         bot.send_message(chat_id, "❌ شما اجازه آپلود فایل ندارید!")
         return
 
-    # --- ذخیره فایل در کانال لاگ ---
+    # --- قسمت جدید: ذخیره فایل در کانال لاگ ---
     file_id = generate_unique_id()
     file_type = message.content_type
     original_filename = None
@@ -1392,72 +1392,69 @@ def handle_file_upload(message):
         return
 
     try:
-        # اول کانال لاگ رو چک کن
-        storage_chat_id = None
-        storage_message_id = None
-        
-        if LOG_CHANNEL_ID:
-            try:
-                # فوروارد فایل به کانال لاگ
-                forwarded_msg = bot.forward_message(
-                    LOG_CHANNEL_ID,
-                    chat_id, 
-                    message.message_id
-                )
-                
-                storage_chat_id = LOG_CHANNEL_ID
-                storage_message_id = forwarded_msg.message_id
-                
-                logger.info(f"✅ فایل در کانال لاگ ذخیره شد: {file_id} - کانال: {LOG_CHANNEL_ID}")
-                
-            except Exception as channel_error:
-                logger.error(f"❌ خطا در ذخیره در کانال لاگ: {channel_error}")
-                # اگر کانال لاگ مشکل داشت، به پیوی ادمین برو
-                storage_chat_id = ADMIN_ID
-                storage_message_id = message.message_id
-                logger.info(f"⚠️ فایل در پیوی ادمین ذخیره شد: {file_id}")
+        # فوروارد فایل به کانال لاگ
+        if LOG_CHANNEL_ID and setup_log_channel():
+            forwarded_msg = bot.forward_message(
+                LOG_CHANNEL_ID,  # ذخیره در کانال لاگ
+                chat_id, 
+                message.message_id
+            )
+            
+            storage_chat_id = LOG_CHANNEL_ID
+            storage_message_id = forwarded_msg.message_id
+            
+            logger.info(f"✅ فایل در کانال لاگ ذخیره شد: {file_id}")
+            
         else:
-            # اگر کانال لاگ تنظیم نشده، در پیوی ادمین ذخیره کن
+            # اگر کانال لاگ نبود، در پیوی ادمین ذخیره کن
+            forwarded_msg = bot.forward_message(
+                ADMIN_ID,
+                chat_id, 
+                message.message_id
+            )
+            
             storage_chat_id = ADMIN_ID
-            storage_message_id = message.message_id
-            logger.info(f"⚠️ کانال لاگ تنظیم نشده - فایل در پیوی ادمین ذخیره شد: {file_id}")
-
-        # ذخیره اطلاعات در دیتابیس
+            storage_message_id = forwarded_msg.message_id
+            
+            logger.info(f"⚠️ فایل در پیوی ادمین ذخیره شد: {file_id}")
+        
+        # ذخیره اطلاعات با آیدی کانال لاگ
         save_file_info(
             file_id, 
             user_id, 
             file_type, 
-            storage_message_id,    # آیدی پیام در کانال لاگ یا پیوی ادمین
-            storage_chat_id,       # آیدی کانال لاگ یا ادمین
+            storage_message_id,    # آیدی پیام در کانال لاگ
+            storage_chat_id,       # آیدی کانال لاگ
             caption, 
             original_filename
         )
 
-        # ارسال پیام تایید به ادمین
-        bot_username = bot.get_me().username
-        seconds_text = str(settings['auto_delete_time']) if settings['auto_delete_time'] > 0 else "نامشخص"
-
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton(text=LANGUAGES[lang]['btn_redownload_file'], url=f"https://t.me/{bot_username}?start={file_id}"))
-
-        sent_message = bot.send_message(
-            chat_id,
-            LANGUAGES[lang]['upload_link_single'].format(bot_username=bot_username, file_id=file_id, seconds=seconds_text),
-            reply_markup=markup
-        )
-
-        # لاگ کردن اطلاعات ذخیره‌سازی
-        if storage_chat_id == LOG_CHANNEL_ID:
-            storage_location = "کانال لاگ"
-        else:
-            storage_location = "پیوی ادمین"
-            
-        logger.info(f"📁 فایل {file_id} با موفقیت در {storage_location} ذخیره شد")
-
     except Exception as e:
         logger.error(f"❌ خطا در ذخیره‌سازی فایل: {e}")
-        bot.send_message(chat_id, "❌ خطا در ذخیره‌سازی فایل. لطفاً دوباره تلاش کنید.")
+        bot.send_message(chat_id, "❌ خطا در ذخیره‌سازی فایل")
         return
+
+    # ارسال لینک به کاربر
+    bot_username = bot.get_me().username
+    seconds_text = str(settings['auto_delete_time']) if settings['auto_delete_time'] > 0 else "نامشخص"
+
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton(text=LANGUAGES[lang]['btn_redownload_file'], url=f"https://t.me/{bot_username}?start={file_id}"))
+
+    sent_message = bot.send_message(
+        chat_id,
+        LANGUAGES[lang]['upload_link_single'].format(bot_username=bot_username, file_id=file_id, seconds=seconds_text),
+        reply_markup=markup
+    )
+
+    # حذف خودکار فقط برای کاربران عادی و فقط پیام لینک
+    if not is_admin(user_id) and settings['auto_delete_time'] > 0:
+        scheduler.add_job(
+            bot.delete_message,
+            'date',
+            run_date=datetime.now() + timedelta(seconds=settings['auto_delete_time']),
+            args=[chat_id, sent_message.message_id]  # فقط پیام لینک
+        )
         
 # --- Command Handlers for Menu Buttons ---
 @bot.message_handler(func=lambda message: True)
@@ -1565,18 +1562,19 @@ def handle_menu_buttons(message):
     elif message.text == LANGUAGES[lang]['btn_file_search']:
         file_search_step1(message)
 
-    # Admin-specific commands
-  elif is_admin(user_id):
-    if message.text == LANGUAGES[lang]['settings_menu']:
-        show_settings_menu(chat_id, lang)
-    
-    # این خط رو اضافه کن:
+       # Admin-specific commands
+    elif is_admin(user_id):
+        if message.text == LANGUAGES[lang]['settings_menu']:
+            show_settings_menu(chat_id, lang)
+        
+        # این خط رو اضافه کن برای آمار ربات
         elif message.text == '📊 آمار ربات':
             stats = generate_stats()
             bot.send_message(chat_id, stats, parse_mode='Markdown')
+        
         elif message.text == LANGUAGES[lang]['btn_upload_file']:
             bot.send_message(chat_id, "لطفاً فایل خود (عکس، ویدئو، سند یا صدا) را ارسال کنید.")
-            user_states[chat_id] = 'awaiting_file_upload'
+            user_states[chat_id] = 'awaiting_file_upload' # Set state for file handling
         elif message.text == LANGUAGES[lang]['btn_album_upload']:
             show_album_upload_menu(chat_id, lang)
             user_states[chat_id] = 'awaiting_album_files'
