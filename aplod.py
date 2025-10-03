@@ -1387,9 +1387,31 @@ def set_language(call):
     else:
         show_user_main_menu(chat_id, lang_code)
 
-# --- راه‌اندازی ربات ---
-if __name__ == '__main__':
-    create_tables()
-    logger.info("ربات با موفقیت راه‌اندازی شد.")
-    bot.infinity_polling()
+# --- راه‌اندازی اصلی ---
+def initialize_bot():
+    """راه‌اندازی اولیه ربات"""
+    logger.info("🚀 در حال راه‌اندازی ربات...")
+    
+    # اول بررسی کن دیتابیس سالم باشد
+    if not auto_backup.check_and_restore():
+        logger.warning("⚠️ دیتابیس نیاز به بازیابی دارد")
+    
+    # سپس جداول رو ایجاد کن
+    if not create_tables():
+        logger.error("❌ ایجاد جداول ناموفق بود")
+        return False
+    
+    # شروع پشتیبان‌گیری خودکار
+    auto_backup.start_auto_backup()
+    
+    logger.info("✅ ربات با موفقیت راه‌اندازی شد")
+    return True
 
+if __name__ == '__main__':
+    if initialize_bot():
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            logger.error(f"❌ خطا در polling: {e}")
+            time.sleep(5)
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
