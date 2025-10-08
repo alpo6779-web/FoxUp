@@ -35,47 +35,129 @@ scheduler.start()
 user_states = {}
 album_upload_data = {}
 
-# --- سیستم پینگ دوره‌ای برای فعال نگه داشتن ربات ---
-class AutoPinger:
+# --- سیستم پشتیبان‌گیری و ارسال به تلگرام ---
+class BackupManager:
     def __init__(self):
         self.is_running = False
         
-    def start_pinging(self):
-        """شروع پینگ دوره‌ای برای فعال نگه داشتن ربات"""
+    def start_backup_system(self):
+        """شروع سیستم پشتیبان‌گیری دوره‌ای"""
         if self.is_running:
             return
             
         self.is_running = True
-        ping_thread = threading.Thread(target=self._ping_loop, daemon=True)
-        ping_thread.start()
-        logger.info("🚀 سیستم پینگ دوره‌ای فعال شد")
+        backup_thread = threading.Thread(target=self._backup_loop, daemon=True)
+        backup_thread.start()
+        logger.info("🚀 سیستم پشتیبان‌گیری دوره‌ای فعال شد")
     
-    def _ping_loop(self):
-        """حلقه پینگ دوره‌ای"""
+    def _backup_loop(self):
+        """حلقه پشتیبان‌گیری"""
         # اول 30 ثانیه صبر کن تا سرور کامل راه‌اندازی بشه
         time.sleep(30)
         
         while self.is_running:
             try:
-                # پینگ به localhost اما روی پورت 10000
-                health_url = "http://localhost:10000/health"
-                response = requests.get(health_url, timeout=10)
+                # ایجاد پشتیبان
+                backup_file = self._create_backup()
+                if backup_file:
+                    # ارسال پشتیبان به ادمین‌ها
+                    self._send_backup_to_admins(backup_file)
+                    # پاک کردن فایل موقت
+                    os.remove(backup_file)
                 
-                if response.status_code == 200:
-                    logger.info(f"✅ پینگ موفق - ربات فعال")
-                else:
-                    logger.warning(f"⚠️ پینگ با کد غیرعادی: {response.status_code}")
-                    
-            except requests.exceptions.RequestException as e:
-                logger.error(f"❌ خطا در پینگ: {e}")
+                logger.info("✅ پشتیبان‌گیری و ارسال با موفقیت انجام شد")
+                
             except Exception as e:
-                logger.error(f"❌ خطای غیرمنتظره در پینگ: {e}")
+                logger.error(f"❌ خطا در پشتیبان‌گیری: {e}")
             
-            # منتظر 8 دقیقه بمان (کمتر از 15 دقیقه Render)
-            time.sleep(480)  # 8 دقیقه = 480 ثانیه
+            # منتظر 10 دقیقه بمان
+            time.sleep(600)  # 10 دقیقه = 600 ثانیه
+    
+    def _create_backup(self):
+        """ایجاد فایل پشتیبان از دیتابیس"""
+        try:
+            # نام فایل پشتیبان با timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_filename = f"backup_{timestamp}.db"
+            backup_path = f"/tmp/{backup_filename}"
+            
+            # کپی دیتابیس
+            import shutil
+            shutil.copy2(DB_FILE, backup_path)
+            
+            logger.info(f"✅ پشتیبان ایجاد شد: {backup_filename}")
+            return backup_path
+            
+        except Exception as e:
+            logger.error(f"❌ خطا در ایجاد پشتیبان: {e}")
+            return None
+    
+    def _send_backup_to_admins(self, backup_path):
+        """ارسال پشتیبان به ادمین‌ها"""
+        try:
+            # دریافت آمار فعلی
+            user_count = get_total_users()
+            file_count = get_total_files()
+            album_count = get_total_albums()
+            admin_count = get_admin_count()
+            
+            # متن اطلاع‌رسانی
+            stats_text = f"""
+📊 **گزارش پشتیبان‌گیری دوره‌ی**
 
-# ایجاد نمونه پینگر
-auto_pinger = AutoPinger()
+⏰ زمان: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+👥 کاربران: {user_count} نفر
+📁 فایل‌ها: {file_count} فایل
+📸 آلبوم‌ها: {album_count} آلبوم
+👨‍💼 ادمین‌ها: {admin_count} نفر
+🔄 محیط: Render
+
+✅ پشتیبان با موفقیت ایجاد شد.
+            """
+            
+            # ارسال به همه ادمین‌ها
+            admins = get_all_admins()
+            for admin_id in admins:
+                try:
+                    # اول آمار رو بفرست
+                    bot.send_message(admin_id, stats_text, parse_mode='Markdown')
+                    
+                    # سپس فایل پشتیبان رو بفرست
+                    with open(backup_path, 'rb') as backup_file:
+                        bot.send_document(
+                            admin_id, 
+                            backup_file,
+                            caption=f"📦 پشتیبان دیتابیس - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+                            visible_file_name=f"backup_{datetime.now().strftime('%Y%m%d_%H%M')}.db"
+                        )
+                    
+                    logger.info(f"✅ پشتیبان برای ادمین {admin_id} ارسال شد")
+                    
+                except Exception as e:
+                    logger.error(f"❌ خطا در ارسال به ادمین {admin_id}: {e}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ خطا در ارسال پشتیبان: {e}")
+            return False
+    
+    def create_instant_backup(self):
+        """ایجاد پشتیبان فوری (برای تست)"""
+        try:
+            backup_file = self._create_backup()
+            if backup_file:
+                success = self._send_backup_to_admins(backup_file)
+                if os.path.exists(backup_file):
+                    os.remove(backup_file)
+                return success
+            return False
+        except Exception as e:
+            logger.error(f"❌ خطا در پشتیبان فوری: {e}")
+            return False
+
+# ایجاد نمونه مدیریت پشتیبان
+backup_manager = BackupManager()
 
 # --- پشتیبانی از زبان‌ها ---
 LANGUAGES = {
@@ -1835,8 +1917,8 @@ def initialize_bot():
     # شروع پشتیبان‌گیری خودکار
     auto_backup.start_auto_backup()
     
-    # 🔥 شروع پینگ دوره‌ای
-    auto_pinger.start_pinging()
+    # 🔥 شروع سیستم پشتیبان‌گیری دوره‌ای
+    backup_manager.start_backup_system()
     
     logger.info("✅ ربات با موفقیت راه‌اندازی شد")
     return True
